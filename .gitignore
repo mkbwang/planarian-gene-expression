@@ -4,3 +4,4 @@
 *.txt
 *.pkl
 .idea/
+*/__pycache__/
