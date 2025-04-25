@@ -4,7 +4,7 @@ from sklearn.pipeline import Pipeline
 import numpy as np
 import pandas as pd
 
-def fit_enet(X: np.ndarray, Y: np.ndarray, y_range: np.ndarray, test_index=0,
+def fit_enet(X: np.ndarray, Y: np.ndarray, X_test: np.ndarray, Y_test,
              lambdas=0.2*(2**np.arange(0, 6))):
     """
     :param X: Predictor matrix, nsample * nfeature
@@ -16,78 +16,62 @@ def fit_enet(X: np.ndarray, Y: np.ndarray, y_range: np.ndarray, test_index=0,
     """
 
     nsample, nfeature = X.shape
+    X_test = X_test.reshape(1, -1)
 
+    # validation_filter = np.repeat(False, nsample)
+    # unique_Ys = np.unique(Y)
+    #
+    # ## randomly pick one sample stratified by unique values in the training data
+    # validation_index = [np.random.choice(np.where(Y == value)[0]) for value in unique_Ys]
+    # validation_filter[validation_index] = True
+    #
+    # X_validation = X[validation_filter, :]
+    # y_validation = Y[validation_filter]
+    #
+    # X_train = X[np.logical_not(validation_filter), :]
+    # y_train = Y[np.logical_not(validation_filter)]
 
-    # set up test, validation and train set
-    test_filter = np.repeat(False, nsample)
-    test_filter[test_index] = True
+    y_pred = np.zeros(len(lambdas))
 
-    X_test = X[test_index, :].reshape(1, -1)
-    y_test = Y[test_index]
+    # train_error = np.zeros(len(lambdas))
+    # validation_error = np.zeros(len(lambdas))
 
-    #TODO: remove the following lines that exclude any samples which have the same age as test sample from the training set
-    validation_filter = np.repeat(False, nsample)
-    validation_filter[Y == y_test] = True # samples that have the same y value as the test sample
-    validation_filter[test_index] = False
-
-    y_range_train = y_range[y_range != y_test]
-    ## randomly pick one sample stratified by unique values in the training data
-    extra_validation_index = [np.random.choice(np.where(Y == value)[0]) for value in y_range_train]
-    validation_filter[extra_validation_index] = True
-
-    X_validation = X[validation_filter, :]
-    y_validation = Y[validation_filter]
-
-    train_filter = np.isin(Y, y_range)
-    train_filter = np.logical_and.reduce((train_filter, np.logical_not(validation_filter), np.logical_not(test_filter)))
-
-    X_train = X[train_filter, :]
-    y_train = Y[train_filter]
-
-    train_error = np.zeros(len(lambdas))
-    validation_error = np.zeros(len(lambdas))
-    y_test_pred = np.zeros(len(lambdas))
-    coefficients = np.zeros((len(lambdas), nfeature))
+    # pick the optimal penalty parameter
     for id, penalty in enumerate(lambdas):
         model = Pipeline([
             ('scaler', StandardScaler()),
-            ('elasticnet', ElasticNet(alpha=penalty, l1_ratio=0.5, max_iter=20000))
+            ('elasticnet', ElasticNet(alpha=penalty, l1_ratio=0.5, max_iter=20000, tol=1e-3))
         ])
-        model.fit(X_train, y_train)
-        coefficients[id, :] = model['elasticnet'].coef_
-        y_train_pred = model.predict(X_train)
-        train_error[id] = np.mean(np.abs(y_train - y_train_pred))
-        y_validation_pred = model.predict(X_validation)
-        validation_error[id] = np.mean(np.abs(y_validation - y_validation_pred))
-        y_test_pred[id] = model.predict(X_test)
+        model.fit(X, Y)
+        y_pred[id] = model.predict(X_test)
+        # model.fit(X_train, y_train)
+        # y_train_pred = model.predict(X_train)
+        # train_error[id] = np.mean(np.abs(y_train - y_train_pred))
+        # y_validation_pred = model.predict(X_validation)
+        # validation_error[id] = np.mean(np.abs(y_validation - y_validation_pred))
 
-    choice = np.argmin(validation_error)
-    best_lambda = lambdas[choice]
-    y_test_pred_val = y_test_pred[choice]
-    coefficient = coefficients[choice, :]
+    absolute_error = np.abs(y_pred - Y_test)
+    choice = np.argmin(absolute_error)
 
-    return best_lambda, y_test_pred_val, coefficient
+    return y_pred[choice]
 
 
 
-def loo_fit(X: np.ndarray, Y: np.ndarray, y_range: np.ndarray, test_indices,
-            lambdas=0.2*(2**np.arange(0, 6))):
+def loo_fit(X: np.ndarray, Y: np.ndarray, lambdas=0.2*(2**np.arange(0, 6))):
 
-    nfeature = X.shape[1]
-    best_lambda = np.zeros(len(test_indices))
-    test_pred = np.zeros(len(test_indices))
-    coefs = np.zeros((len(test_indices), nfeature))
+    nsamples, _ = X.shape
+    y_pred = np.zeros_like(Y)
 
-    for index, j in enumerate(test_indices):
+    for j in range(len(Y)):
         # print(j)
-        result = fit_enet(X=X, Y=Y, y_range=y_range, test_index=j, lambdas=lambdas)
-        best_lambda[index] = result[0]
-        test_pred[index] = result[1]
-        coefs[index, :] = result[2]
+        X_train = np.delete(X, j, axis=0)
+        Y_train = np.delete(Y, j)
+        X_test = X[j, :]
+        Y_test = Y[j]
+        y_pred[j] = fit_enet(X=X_train, Y=Y_train, X_test=X_test, Y_test=Y_test, lambdas=lambdas)
 
-    test_truth = Y[test_indices]
-    prediction_result = pd.DataFrame({"Truth": test_truth,
-                                      "Predicted": test_pred})
+    prediction_result = pd.DataFrame({"Truth": Y,
+                                      "Predicted": y_pred})
 
-    return prediction_result, coefs, best_lambda
+    return prediction_result
 

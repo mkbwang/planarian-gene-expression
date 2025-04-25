@@ -109,17 +109,7 @@ def loo_predict(expression_df: pd.DataFrame, labels, weighted="None", normalize=
     return output_df, prob_mat
 
 
-def mae(truth, predicted, type="mean"):
 
-    if type not in ["mean", "median"]:
-        raise ValueError("Argument must be one of 'mean', 'median'")
-    error = 0
-    if type == "mean":
-        error = np.mean(np.abs(truth - predicted))
-    else:
-        error = np.median(np.abs(truth-predicted))
-
-    return error
 
 
 

@@ -1,5 +1,6 @@
 #%%
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 import numpy as np
 color_gray="#808080"
 color_red="#db382c"
@@ -12,9 +13,10 @@ all_colors = [color_blue,  color_red, color_green, color_brown, color_gray, colo
 
 
 def single_line_plot(ymat, xmat=None, colors=None, linetypes=None,
-                     xticks=None, xticknames=None, xrange=None, xname=None,
-                     yticks=None, yticknames=None, yrange=None, yname=None,
-                     legend_labels=None,
+                     xticks=None, xticknames=None, xname=None,
+                     yticks=None, yticknames=None, yname=None,
+                     colors_map=None,
+                     linetypes_map=None,
                      title=None, size=(6,4)):
 
     fig, ax = plt.subplots(figsize=size)
@@ -27,16 +29,12 @@ def single_line_plot(ymat, xmat=None, colors=None, linetypes=None,
         linetypes = ['-o' for _ in range(nlines)]
     if xmat is None:
         for j in range(nlines):
-            if legend_labels is None:
-                ax.plot(xticks, ymat[j, :], linetypes[j], color=colors[j])
-            else:
-                ax.plot(xticks, ymat[j, :], linetypes[j], color=colors[j], label=legend_labels[j])
+            ax.plot(xticks, ymat[j, :], linetypes[j], color=colors[j])
     else:
         for j in range(nlines):
-            if legend_labels is None:
-                ax.plot(xmat[j, :], ymat[j, :], linetypes[j], color=colors[j])
-            else:
-                ax.plot(xmat[j, :], ymat[j, :], linetypes[j], color=colors[j], label=legend_labels[j])
+            ax.plot(xmat[j, :], ymat[j, :], linetypes[j], color=colors[j])
+
+
 
     # change x ticks
     if xticknames is not None:
@@ -53,8 +51,23 @@ def single_line_plot(ymat, xmat=None, colors=None, linetypes=None,
 
     if title is not None:
         ax.set_title(title)
-    if legend_labels is not None:
-        ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    if colors_map is not None or linetypes_map is not None:
+
+        colors_legend = []
+        if colors_map is not None:
+            for col_label in colors_map.keys():
+                colors_legend.append(mlines.Line2D([], [], color=colors_map[col_label],
+                                                   marker='', linestyle='-', label=col_label))
+        linetypes_legend = []
+        if linetypes_map is not None:
+            for linetype_label in linetypes_map.keys():
+                linetypes_legend.append(mlines.Line2D([], [],
+                                                      color='black', linestyle=linetypes_map[linetype_label],
+                                                      label=linetype_label))
+
+        all_legends = colors_legend + linetypes_legend
+        ax.legend(handles=all_legends, loc='upper left', bbox_to_anchor=(1, 1))
+
 
     return fig
 
@@ -62,7 +75,7 @@ def single_line_plot(ymat, xmat=None, colors=None, linetypes=None,
 def single_scatter_plot(ymat, xmat=None, colors=None,
                      xticks=None, xticknames=None, xname=None,
                      yticks=None, yticknames=None, yname=None,
-                     legend_labels=None,
+                     legend_labels=None, diag_line=False,
                      title=None, size=(6,4)):
     fig, ax = plt.subplots(figsize=size)
     nlines, _ = ymat.shape
@@ -95,6 +108,12 @@ def single_scatter_plot(ymat, xmat=None, colors=None,
         ax.set_xlabel(xname)
     if yname is not None:
         ax.set_ylabel(yname)
+
+    if diag_line:
+        min_x = np.min(xmat) if xmat is not None else np.min(xticks)
+        max_x = np.max(xmat) if xmat is not None else np.max(xticks)
+        for j in range(nlines):
+            ax.plot([min_x, max_x], [min_x, max_x], linestyle="--")
 
     if title is not None:
         ax.set_title(title)

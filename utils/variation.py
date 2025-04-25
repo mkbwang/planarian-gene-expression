@@ -63,13 +63,12 @@ def var_comp(geneexp_df, groups):
     ESS = sum_squares(geneexp_meanbygroup, geneexp_mean, weights=count_bygroup) # explained sum of squares
     RSS = TSS - ESS # residual sum of squares
     Rsquare = ESS / TSS
-    F_stat = (ESS / (len(count_bygroup)-1)) / (RSS / (len(geneexp_df_copy) - len(count_bygroup)))
+    # F_stat = (ESS / (len(count_bygroup)-1)) / (RSS / (len(geneexp_df_copy) - len(count_bygroup)))
 
     SSdf = pd.DataFrame({"TSS": TSS,
                          "RSS": RSS,
                          "ESS": ESS,
-                         "R2": Rsquare,
-                         "Fstat": F_stat})
+                         "R2": Rsquare})
     SSdf.index = genes
     # SSdf = SSdf.sort_values(by=["Fstat"], ascending=False)
 
