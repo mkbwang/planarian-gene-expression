@@ -1,7 +1,11 @@
 # planarian-gene-expression
 
-* `kmeans_clustering.ipynb`: Apply kmeans to the gene expression patterns from 2 months to 23 months and group the genes into 8 clusters.
-* `Visualization.ipynb`: Randomly select five genes from each cluster and visualize their time trends.
-* `Autocorrelation.ipynb`: Calculate autocorrelation for each gene at lag 1-9. Test if each autocorrelation is significantly different from zero.
-* `feature_selection.ipynb`: Select potential marker genes for prediction based on the autocorrelation calculation.
-* `PCA_ML.ipynb`: Apply PCA to the selected marker genes to reduce dimensions. Carry out leave-one-out analysis to see if dimensioned reduced gene expression can be predictive of ages.
+* `split_samples.py` split the raw data into training data and test data. Training data contains 50 samples with known ages.
+* `gene_variation_sort.py` sort the genes based on their ratio of between age variance over within age variance.
+* `utils/` folder contains utility functions for plotting, calculating variance, fitting deconvolution and elastic net regressions.
+* `deconvolution.ipynb` folder contains experiments of evaluating the best way of selecting a subset of useful genes for deconvolution prediction.
+* `Elastic_Net.ipynb` and `Elastic_Net_2.ipynb` are two early notebooks of trying to fit elastic net regressions
+* `Correlated_Genes.ipynb` is meant to answer a request by Long to report the genes with the highest correlation with SSMa053560.
+
+
+
