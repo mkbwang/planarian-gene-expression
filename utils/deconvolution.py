@@ -4,6 +4,8 @@ from cvxopt import matrix, solvers
 import scipy.stats as ss
 from .variation import meanexp, sum_squares, var_comp
 from sklearn.preprocessing import StandardScaler
+import osqp
+import scipy.sparse as sparse
 
 solvers.options['show_progress'] = False
 
@@ -53,6 +55,98 @@ def predict(X: np.ndarray,Y: np.ndarray, labels: np.ndarray, gene_weights:np.nda
     label_map = labels[np.argmax(label_weights)]
 
     return label_weights, label_estim, label_map
+
+
+def predict_l2(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, regularization=0, verbose=False):
+    """
+    :param X: gene expression matrix with nsamples*ngenes as predictors
+    :param Y: gene expression vector with length of ngenes. This is the target sample to predict label
+    :param labels: labels of the training samples
+    :return: estimated weight vector and weighted sum of labels
+    """
+
+    nsamples, ngenes = X.shape
+    assert ngenes == len(Y), "Dimensions do not match between training and test samples"
+    assert nsamples == len(labels), "Dimensions do not match between the gene expression matrix and labels"
+
+    XXt = np.matmul(X, X.T)
+    mean_diag = np.mean(np.diag(XXt))
+    XY = np.matmul(X, Y).flatten()
+    Pmat = sparse.csc_matrix(XXt + np.identity(nsamples)*mean_diag*regularization*2)
+    qvec = -XY
+
+    # linear constraint
+    A_0 = np.identity(nsamples)
+    l_0 = np.zeros(nsamples)
+    u_0 = np.ones(nsamples) * np.inf
+
+    A_1 = np.ones((1, nsamples))
+    l_1 = 1
+    u_1 = 1
+
+    A = sparse.csc_matrix(np.concatenate((A_0, A_1), axis=0))
+    l_vec = np.append(l_0, l_1)
+    u_vec = np.append(u_0, u_1)
+
+    model = osqp.OSQP()
+    model.setup(Pmat, qvec, A, l_vec, u_vec, verbose=verbose)
+    result = model.solve()
+
+    solution = result.x
+    solution[solution < 1.0/nsamples/10] = 0
+    solution = solution / np.sum(solution)
+
+    return solution
+
+
+
+def predict_l1(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, regularization=0, verbose=False):
+    """
+    :param X: gene expression matrix with nsamples*ngenes as predictors
+    :param Y: gene expression vector with length of ngenes. This is the target sample to predict label
+    :param labels: labels of the training samples
+    :return: estimated weight vector and weighted sum of labels
+    """
+    nsamples, ngenes = X.shape
+    assert ngenes == len(Y), "Dimensions do not match between training and test samples"
+    assert nsamples == len(labels), "Dimensions do not match between the gene expression matrix and labels"
+    Pdiag = np.concatenate((np.ones(nsamples)*regularization*2, np.zeros(ngenes)))
+    Pmat = sparse.csc_matrix(np.diag(Pdiag))
+
+    qvec = np.concatenate((np.zeros(nsamples), np.ones(ngenes)))
+
+    # linear constraints
+    A_0 = np.concatenate((np.ones(nsamples), np.zeros(ngenes))).reshape(1, -1)
+    l_0 = np.array([1])
+    u_0 = np.array([1])
+    A_1 = np.concatenate((np.identity(nsamples), np.zeros((nsamples, ngenes))), axis=1)
+    l_1 = np.zeros(nsamples)
+    u_1 = np.ones(nsamples) * np.inf
+
+    ## constraint for absolute value
+    A_2 = np.concatenate((X.T, np.identity(ngenes)), axis=1)
+    l_2 = Y
+    u_2 = np.ones(ngenes) * np.inf
+
+    A_3 = np.concatenate((-X.T, np.identity(ngenes)), axis=1)
+    l_3 = -Y
+    u_3 = np.ones(ngenes) * np.inf
+
+    A = sparse.csc_matrix(np.concatenate((A_0, A_1, A_2, A_3), axis=0))
+    l_vec = np.concatenate((l_0, l_1, l_2, l_3))
+    u_vec = np.concatenate((u_0, u_1, u_2, u_3))
+
+    model = osqp.OSQP()
+    model.setup(Pmat, qvec, A, l_vec, u_vec, verbose=verbose)
+    result = model.solve()
+
+    solution = result.x[:nsamples]
+    solution[solution < 1.0 / nsamples / 10] = 0
+    solution = solution / np.sum(solution)
+    return solution
+
+
+
 
 
 
