@@ -1,67 +1,22 @@
 import pandas as pd
 import numpy as np
-from cvxopt import matrix, solvers
+# from cvxopt import matrix, solvers
 import scipy.stats as ss
 from .variation import meanexp, sum_squares, var_comp
 from sklearn.preprocessing import StandardScaler
 import osqp
 import scipy.sparse as sparse
 
-solvers.options['show_progress'] = False
+# solvers.options['show_progress'] = False
 
 
 
-
-def predict(X: np.ndarray,Y: np.ndarray, labels: np.ndarray, gene_weights:np.ndarray = 1):
+def predict_l2(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, penalty=0, verbose=False):
     """
     :param X: gene expression matrix with nsamples*ngenes as predictors
     :param Y: gene expression vector with length of ngenes. This is the target sample to predict label
     :param labels: labels of the training samples
-    :param weights: weights for each gene when fitting deconvolution
-    :param penalty: penalty for difference among estimated weights
-    :return: estimated weight vector and weighted sum of labels
-    """
-
-    nsamples, ngenes = X.shape
-    assert ngenes == len(Y), "Dimensions do not match between training and test samples"
-    assert nsamples == len(labels), "Dimensions do not match between the gene expression matrix and labels"
-
-    if len(gene_weights) == 1:
-        gene_weights = np.ones(ngenes)
-    else:
-        assert len(gene_weights) == ngenes, "Length of weights does not equal the number of genes"
-
-    #quadratic terms
-    XW = X * gene_weights[np.newaxis, :]
-    XWX = np.matmul(XW, X.T)
-    XWY = np.matmul(XW, Y)
-    XWX = matrix(XWX, (nsamples, nsamples), 'd')
-    XWY = matrix(XWY, (nsamples, 1), 'd')
-
-    # TODO: if there is penalty, extra changes need to be made to the quadratic terms based on the distance of labels
-
-    # inequality constraints
-    G = matrix(np.identity(nsamples)*-1.0, (nsamples, nsamples), 'd')
-    h = matrix(np.zeros(nsamples), (nsamples,1), 'd')
-
-    # equality constraints
-    A = matrix(np.ones(nsamples), (1,nsamples), 'd')
-    b = matrix(1.0)
-
-    solution = solvers.qp(XWX, -XWY, G, h, A, b)
-    label_weights = np.array(solution['x']).flatten()
-    label_weights[label_weights < 1e-6] = 0
-    label_estim = np.sum(labels * label_weights)
-    label_map = labels[np.argmax(label_weights)]
-
-    return label_weights, label_estim, label_map
-
-
-def predict_l2(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, regularization=0, verbose=False):
-    """
-    :param X: gene expression matrix with nsamples*ngenes as predictors
-    :param Y: gene expression vector with length of ngenes. This is the target sample to predict label
-    :param labels: labels of the training samples
+    :param penalty: penalty parameter for limiting weight differences between samples
     :return: estimated weight vector and weighted sum of labels
     """
 
@@ -70,9 +25,17 @@ def predict_l2(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, regularization=0,
     assert nsamples == len(labels), "Dimensions do not match between the gene expression matrix and labels"
 
     XXt = np.matmul(X, X.T)
-    mean_diag = np.mean(np.diag(XXt))
     XY = np.matmul(X, Y).flatten()
-    Pmat = sparse.csc_matrix(XXt + np.identity(nsamples)*mean_diag*regularization*2)
+
+    # calculate penalty matrix for samples with similar ages
+    labels_mat_1 = np.tile(labels, (nsamples, 1))
+    labels_mat_2 = np.tile(labels.reshape(-1, 1), (1, nsamples))
+    inverse_abs_distance = penalty*ngenes/(np.abs(labels_mat_1 - labels_mat_2)+1)
+    Penaltymat = -inverse_abs_distance
+    np.fill_diagonal(Penaltymat,
+                     np.sum(inverse_abs_distance, axis=1) - np.diag(inverse_abs_distance))
+
+    Pmat = sparse.csc_matrix(XXt + Penaltymat)
     qvec = -XY
 
     # linear constraint
@@ -96,22 +59,36 @@ def predict_l2(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, regularization=0,
     solution[solution < 1.0/nsamples/10] = 0
     solution = solution / np.sum(solution)
 
-    return solution
+    label_estim = np.sum(labels * solution)
+
+    return solution, label_estim
 
 
 
-def predict_l1(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, regularization=0, verbose=False):
+def predict_l1(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, penalty=0, verbose=False):
     """
     :param X: gene expression matrix with nsamples*ngenes as predictors
     :param Y: gene expression vector with length of ngenes. This is the target sample to predict label
     :param labels: labels of the training samples
+    :param penalty: penalty parameter for limiting weight differences between samples
     :return: estimated weight vector and weighted sum of labels
     """
     nsamples, ngenes = X.shape
     assert ngenes == len(Y), "Dimensions do not match between training and test samples"
     assert nsamples == len(labels), "Dimensions do not match between the gene expression matrix and labels"
-    Pdiag = np.concatenate((np.ones(nsamples)*regularization*2, np.zeros(ngenes)))
-    Pmat = sparse.csc_matrix(np.diag(Pdiag))
+
+    # calculate penalty matrix for samples with similar ages
+    labels_mat_1 = np.tile(labels, (nsamples, 1))
+    labels_mat_2 = np.tile(labels.reshape(-1, 1), (1, nsamples))
+    inverse_abs_distance = penalty*ngenes / (np.abs(labels_mat_1 - labels_mat_2) + 1)
+    Penaltymat = -inverse_abs_distance
+    np.fill_diagonal(Penaltymat,
+                     np.sum(inverse_abs_distance, axis=1) - np.diag(inverse_abs_distance))
+
+    Pdiag = np.zeros(nsamples+ngenes)
+    Pmat = np.diag(Pdiag)
+    Pmat[0:nsamples, 0:nsamples] += Penaltymat
+    Pmat = sparse.csc_matrix(Pmat)
 
     qvec = np.concatenate((np.zeros(nsamples), np.ones(ngenes)))
 
@@ -143,24 +120,25 @@ def predict_l1(X:np.ndarray, Y:np.ndarray, labels: np.ndarray, regularization=0,
     solution = result.x[:nsamples]
     solution[solution < 1.0 / nsamples / 10] = 0
     solution = solution / np.sum(solution)
-    return solution
+
+    label_estim = np.sum(labels * solution)
+
+    return solution, label_estim
 
 
 
 
 
-
-def loo_predict(expression_df: pd.DataFrame, labels, weighted="None", normalize=False):
+def loo_predict(expression_df: pd.DataFrame, labels, type="l2", penalty=0,  normalize=True):
     """
     :param expression_df: nsamples x ngenes
     :param labels: labels for all the samples
-    :param weighted: None (no weighting), R2 (R square) or Fstat (F statistic)
     :param normalize: whether to standardize each column
     :return: the estimated mean label and the weight matrix
     """
 
-    if weighted not in ["None", "R2", "Fstat"]:
-        raise ValueError("Argument must be one of 'None', 'R2', 'Fstat'")
+    fit_func = predict_l2 if type == "l2" else predict_l1
+
 
     output_df = pd.DataFrame({
         "Truth": labels,
@@ -183,18 +161,14 @@ def loo_predict(expression_df: pd.DataFrame, labels, weighted="None", normalize=
                                     index=train_df.index, columns=train_df.columns)
             validation_df = pd.DataFrame(scaler.transform(validation_df),
                                          index=validation_df.index, columns=validation_df.columns)
-        weights = np.ones(ngenes)
-        if weighted != "None":
-            weights_df = var_comp(train_df, groups=train_labels)
-            weights = weights_df[weighted].to_numpy()
-            weights = weights / np.max(weights)
+
 
         train_mat = train_df.to_numpy()
         validation_vec = validation_df.iloc[0, :].to_numpy()
 
         # fit deconvolution
-        label_probs, mean_label, _ = predict(X=train_mat, Y=validation_vec, labels=train_labels,
-                                             gene_weights=weights)
+        label_probs, mean_label = fit_func(X=train_mat, Y=validation_vec, labels=train_labels,
+                                             penalty=penalty)
 
         label_probs = np.insert(label_probs, j, 0)
         prob_mat[j, :] = label_probs

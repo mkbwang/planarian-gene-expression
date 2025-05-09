@@ -15,6 +15,8 @@ all_colors = [color_blue,  color_red, color_green, color_brown, color_gray, colo
 def single_line_plot(ymat, xmat=None, colors=None, linetypes=None,
                      xticks=None, xticknames=None, xname=None,
                      yticks=None, yticknames=None, yname=None,
+                     vertical_lines = None,
+                     horizontal_lines = None,
                      colors_map=None,
                      linetypes_map=None,
                      title=None, size=(6,4)):
@@ -34,7 +36,12 @@ def single_line_plot(ymat, xmat=None, colors=None, linetypes=None,
         for j in range(nlines):
             ax.plot(xmat[j, :], ymat[j, :], linetypes[j], color=colors[j])
 
-
+    if vertical_lines is not None:
+        for value in vertical_lines:
+            ax.axvline(x=value, linestyle='--')
+    if horizontal_lines is not None:
+        for value in vertical_lines:
+            ax.axhline(x=value, linestyle='--')
 
     # change x ticks
     if xticknames is not None:
